@@ -24,14 +24,14 @@ module Server
     end
 
     def self.gd_filesize(fid)
-        link = GD_APIDL_PATH % [fid, @@conf["apikey"]["main"]]
+        link = GD_APIDL_PATH % [fid, @@conf["apikey"]["main"].as_s]
         res = gapi_cli.head link
         return -1 unless res.status_code == 200
         return res.headers["Content-Length"].to_i
     end
 
     def self.get_apidirectlink(fid)
-        return GD_APIDL % [fid, @@conf["apikey"]["publicdl"]]
+        return GD_APIDL % [fid, @@conf["apikey"]["publicdl"].as_s]
     end
 
     def self.auto_directlink(fid, forward = false)
@@ -78,14 +78,17 @@ module Server
         end
     end
     
-    def self.start_server(port = 8080, bind = "0.0.0.0")
+    def self.start_server(host = "", port = -1)
         load_config
 
-        server = HTTP::Server.new(bind, port, [
+        host = @@conf["bind"]["host"].as_s if host.empty?
+        port = @@conf["bind"]["port"].as_s.to_i if port < 0
+
+        server = HTTP::Server.new(host, port, [
             HTTP::ErrorHandler.new ENV["ENV"] == "debug",
         ]) { |context| handle_request context }
     
-        puts "Listening on http://0.0.0.0:8080"
+        puts "Listening on http://#{host}:#{port}"
         server.listen
     end
 end
