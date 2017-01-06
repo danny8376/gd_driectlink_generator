@@ -93,4 +93,7 @@ module Server
     end
 end
 
+
+ENV["ENV"] ||= "production"
+
 Server.start_server
