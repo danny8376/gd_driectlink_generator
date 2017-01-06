@@ -3,3 +3,5 @@
 /lib/
 /bin/
 /.shards/
+
+config.yml
