@@ -8,16 +8,16 @@ module Server
         @@conf = YAML.parse(File.read("./config.yml"))
     end
 
-    API_URI = "https://www.googleapis.com"
+    GAPI_URI = "https://www.googleapis.com"
 
     GD_APIDL_PATH = "/drive/v3/files/%s?alt=media&key=%s"
 
-    GD_APIDL = API_URI + GD_APIDL_PATH
+    GD_APIDL = GAPI_URI + GD_APIDL_PATH
     GD_UCDL = "https://drive.google.com/uc?export=download&id=%s"
 
     FORWARD_DL_PATH = "/adl/%s"
 
-    def self.gd_cli
+    def self.gapi_cli
         cli = HTTP::Client.new "www.googleapis.com", 443, true
         cli.compress = false
         cli
@@ -25,7 +25,7 @@ module Server
 
     def self.gd_filesize(fid)
         link = GD_APIDL_PATH % [fid, @@conf["apikey"]["main"]]
-        res = gd_cli.head link
+        res = gapi_cli.head link
         return -1 unless res.status_code == 200
         return res.headers["Content-Length"].to_i
     end
