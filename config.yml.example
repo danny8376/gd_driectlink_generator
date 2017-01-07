@@ -4,3 +4,6 @@ bind:
 apikey:
   main: main api key here
   publicdl: public download api key here
+cache:
+  expire: 60 # cache expire period in seconds
+  size: 100 # max cache items

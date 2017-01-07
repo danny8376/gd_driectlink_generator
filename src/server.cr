@@ -8,6 +8,37 @@ module Server
         @@conf = YAML.parse(File.read("./config.yml"))
     end
 
+    struct CacheNode
+        property filesize, update
+        def initialize(@filesize : Int64, @update : Time)
+        end
+    end
+
+    @@cache = {} of String => CacheNode
+    def self.init_cache
+        @@cache.clear
+    end
+
+    def self.insert_cache(fid, filesize)
+        if @@cache.size >= @@conf["cache"]["size"].as_s.to_i
+            old = @@cache.min_by { |_, v| v.update }
+            @@cache.delete old[0]
+        end
+        @@cache[fid] = CacheNode.new filesize, Time.now
+    end
+
+    def self.check_cache(fid, data_proc, valid_proc)
+        now = Time.now
+        cache = @@cache[fid]?
+        expire = @@conf["cache"]["expire"].as_s.to_i
+        # if cache still valid, just return it
+        return cache.filesize if cache && (now - cache.update).total_seconds < expire
+        # if no cache or expired, run block
+        filesize = data_proc.call
+        insert_cache fid, filesize if valid_proc.call filesize
+        filesize
+    end
+
     GAPI_URI = "https://www.googleapis.com"
 
     GD_APIDL_PATH = "/drive/v3/files/%s?alt=media&key=%s"
@@ -24,10 +55,14 @@ module Server
     end
 
     def self.gd_filesize(fid)
-        link = GD_APIDL_PATH % [fid, @@conf["apikey"]["main"].as_s]
-        res = gapi_cli.head link
-        return -res.status_code unless res.status_code == 200
-        return res.headers["Content-Length"].to_i
+        check_cache(fid, -> {
+            link = GD_APIDL_PATH % [fid, @@conf["apikey"]["main"].as_s]
+            res = gapi_cli.head link
+            return -res.status_code.to_i64 unless res.status_code == 200
+            return res.headers["Content-Length"].to_i64
+        }, ->(filesize : Int64) {
+            filesize > 0 || filesize == -404 # valid size or not found is cachable data
+        })
     end
 
     def self.get_apidirectlink(fid)
@@ -89,6 +124,7 @@ module Server
     
     def self.start_server(host = "", port = -1)
         load_config
+        init_cache
 
         host = @@conf["bind"]["host"].as_s if host.empty?
         port = @@conf["bind"]["port"].as_s.to_i if port < 0
