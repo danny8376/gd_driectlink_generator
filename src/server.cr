@@ -3,9 +3,36 @@ require "http/client"
 require "yaml"
 
 module Server
-    @@conf = YAML::Any.new(nil)
-    def self.load_config
-        @@conf = YAML.parse(File.read("./config.yml"))
+    struct Config
+        struct Bind
+            YAML.mapping(
+                host:   String,
+                port:   Int32,
+            )
+        end
+        struct APIKey
+            YAML.mapping(
+                main:       String,
+                publicdl:   String,
+            )
+        end
+        struct Cache
+            YAML.mapping(
+                expire:     UInt32,
+                size:       UInt32,
+            )
+        end
+        YAML.mapping(
+            bind:   Bind,
+            apikey: APIKey,
+            cache:  Cache,
+        )
+    end
+
+    # read example as default config value 030
+    @@conf = Config.from_yaml(File.read("./config.yml.example"))
+    def self.load_config(yaml = File.read("./config.yml"))
+        @@conf = Config.from_yaml yaml
     end
 
     struct CacheNode
@@ -20,7 +47,7 @@ module Server
     end
 
     def self.insert_cache(fid, filesize)
-        if @@cache.size >= @@conf["cache"]["size"].as_s.to_i
+        if @@cache.size >= @@conf.cache.size
             old = @@cache.min_by { |_, v| v.update }
             @@cache.delete old[0]
         end
@@ -30,7 +57,7 @@ module Server
     def self.check_cache(fid, data_proc, valid_proc)
         now = Time.now
         cache = @@cache[fid]?
-        expire = @@conf["cache"]["expire"].as_s.to_i
+        expire = @@conf.cache.expire
         # if cache still valid, just return it
         return cache.filesize if cache && (now - cache.update).total_seconds < expire
         # if no cache or expired, run block
@@ -56,7 +83,7 @@ module Server
 
     def self.gd_filesize(fid)
         check_cache(fid, -> {
-            link = GD_APIDL_PATH % [fid, @@conf["apikey"]["main"].as_s]
+            link = GD_APIDL_PATH % [fid, @@conf.apikey.main]
             res = gapi_cli.head link
             return -res.status_code.to_i64 unless res.status_code == 200
             return res.headers["Content-Length"].to_i64
@@ -66,7 +93,7 @@ module Server
     end
 
     def self.get_apidirectlink(fid)
-        return GD_APIDL % [fid, @@conf["apikey"]["publicdl"].as_s]
+        return GD_APIDL % [fid, @@conf.apikey.publicdl]
     end
 
     def self.auto_directlink(fid, forward = false)
@@ -126,8 +153,8 @@ module Server
         load_config
         init_cache
 
-        host = @@conf["bind"]["host"].as_s if host.empty?
-        port = @@conf["bind"]["port"].as_s.to_i if port < 0
+        host = @@conf.bind.host if host.empty?
+        port = @@conf.bind.port if port < 0
 
         server = HTTP::Server.new(host, port, [
             HTTP::ErrorHandler.new ENV["ENV"] == "debug",
