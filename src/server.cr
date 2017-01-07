@@ -26,7 +26,7 @@ module Server
     def self.gd_filesize(fid)
         link = GD_APIDL_PATH % [fid, @@conf["apikey"]["main"].as_s]
         res = gapi_cli.head link
-        return -1 unless res.status_code == 200
+        return -res.status_code unless res.status_code == 200
         return res.headers["Content-Length"].to_i
     end
 
@@ -37,7 +37,7 @@ module Server
     def self.auto_directlink(fid, forward = false)
         filesize = gd_filesize fid
         if filesize < 0 # error
-            return ""
+            return "ERR#{-filesize}"
         elsif filesize <= 26214400 # under scan size limit
             return GD_UCDL % [fid]
         else
@@ -62,9 +62,18 @@ module Server
             act_link = $~["act"] == "link"
             link = auto_directlink fid, act_link
             context.response.content_type = "text/plain"
-            if link.empty?
-                context.response.status_code = 404
-                context.response.print "FID: #{fid} not exist or not shared"
+            if link.starts_with? "ERR"
+                case link
+                when "ERR404"
+                    context.response.status_code = 404
+                    context.response.print "FID: #{fid} not exist or not shared"
+                when "ERR403"
+                    context.response.status_code = 503
+                    context.response.print "Google Drive API Quota exceeded, try again later QAQ"
+                else
+                    context.response.status_code = 500
+                    context.response.print "Something weird happend OAO"
+                end
             elsif act_link
                 context.response.print link
             else
