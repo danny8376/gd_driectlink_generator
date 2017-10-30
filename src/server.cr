@@ -41,8 +41,16 @@ module Server
     end
   end
 
+  struct CacheLock
+    property data, fibers
+    def initialize
+      @data = nil.as(Nil|Int64)
+      @fibers = [] of Fiber
+    end
+  end
+
   @@cache = {} of String => CacheNode
-  @@cache_lock = {} of String => Array(Fiber)
+  @@cache_lock = {} of String => CacheLock
   def self.init_cache
     @@cache.clear
     @@cache_lock.clear
@@ -57,29 +65,37 @@ module Server
   end
 
   def self.check_cache(fid, data_proc, valid_proc)
-    # if locked, pause this fiber, and wait for call
-    if @@cache_lock[fid]?
-      @@cache_lock[fid].push Fiber.current
+    # if locked (waiting api call for this fid)
+    if lock = @@cache_lock[fid]?
+      # return pervious data for new requests if requests during api call are still purging
+      return lock.data.as(Int64) if lock.data != nil
+      # otherwise, push current fiber in queue and sleep until api response
+      lock.fibers.push Fiber.current
       sleep
+
+      # resume after api responses
+      lock.fibers.delete Fiber.current # remove self form queue
+      @@cache_lock.delete fid if lock.fibers.empty? # unlock if last fiber in queue
+      return (lock.data != nil ? lock.data : -500).as(Int64) # return http 500 if no result
     end
+
     now = Time.now
     cache = @@cache[fid]?
     expire = @@conf.cache.expire
     # if cache still valid, just return it
     return cache.filesize if cache && (now - cache.update).total_seconds < expire
     # if no cache or expired, lock it then run block
-    @@cache_lock[fid] = [] of Fiber unless @@cache_lock[fid]?
-    filesize = data_proc.call
+    @@cache_lock[fid] = lock = CacheLock.new
+    lock.data = filesize = data_proc.call
     insert_cache fid, filesize if valid_proc.call filesize
     # resume all paused fiber
-    fiber_list = @@cache_lock[fid]? || [] of Fiber
-    until fiber_list.empty?
+    lock.fibers.each do |fiber|
       # we want all fiber to be scheduled
       # but we don't want current fiber to be interrupted
       # Therefore, here's a little hack :p
-      Scheduler.create_resume_event(fiber_list.pop).add(0)
+      Scheduler.create_resume_event(fiber).add(0)
     end
-    @@cache_lock.delete fid
+    @@cache_lock.delete fid if lock.fibers.empty? # remove lock if nothing in queue
     filesize
   end
 
