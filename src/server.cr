@@ -42,8 +42,10 @@ module Server
   end
 
   @@cache = {} of String => CacheNode
+  @@cache_lock = {} of String => Array(Fiber)
   def self.init_cache
     @@cache.clear
+    @@cache_lock.clear
   end
 
   def self.insert_cache(fid, filesize)
@@ -55,14 +57,29 @@ module Server
   end
 
   def self.check_cache(fid, data_proc, valid_proc)
+    # if locked, pause this fiber, and wait for call
+    if @@cache_lock[fid]?
+      @@cache_lock[fid].push Fiber.current
+      sleep
+    end
     now = Time.now
     cache = @@cache[fid]?
-      expire = @@conf.cache.expire
+    expire = @@conf.cache.expire
     # if cache still valid, just return it
     return cache.filesize if cache && (now - cache.update).total_seconds < expire
-    # if no cache or expired, run block
+    # if no cache or expired, lock it then run block
+    @@cache_lock[fid] = [] of Fiber unless @@cache_lock[fid]?
     filesize = data_proc.call
     insert_cache fid, filesize if valid_proc.call filesize
+    # resume all paused fiber
+    fiber_list = @@cache_lock[fid]? || [] of Fiber
+    until fiber_list.empty?
+      # we want all fiber to be scheduled
+      # but we don't want current fiber to be interrupted
+      # Therefore, here's a little hack :p
+      Scheduler.create_resume_event(fiber_list.pop).add(0)
+    end
+    @@cache_lock.delete fid
     filesize
   end
 
