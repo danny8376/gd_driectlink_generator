@@ -93,7 +93,7 @@ module Server
       # we want all fiber to be scheduled
       # but we don't want current fiber to be interrupted
       # Therefore, here's a little hack :p
-      Scheduler.create_resume_event(fiber).add(0)
+      Scheduler.create_resume_event(fiber).add(0.seconds)
     end
     @@cache_lock.delete fid if lock.fibers.empty? # remove lock if nothing in queue
     filesize
