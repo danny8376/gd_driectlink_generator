@@ -90,10 +90,7 @@ module Server
     insert_cache fid, filesize if valid_proc.call filesize
     # resume all paused fiber
     lock.fibers.each do |fiber|
-      # we want all fiber to be scheduled
-      # but we don't want current fiber to be interrupted
-      # Therefore, here's a little hack :p
-      Scheduler.create_resume_event(fiber).add(0.seconds)
+      fiber.enqueue
     end
     @@cache_lock.delete fid if lock.fibers.empty? # remove lock if nothing in queue
     filesize
@@ -189,11 +186,12 @@ module Server
     host = @@conf.bind.host if host.empty?
     port = @@conf.bind.port if port < 0
 
-    server = HTTP::Server.new(host, port, [
+    server = HTTP::Server.new([
       HTTP::ErrorHandler.new ENV["ENV"] == "debug",
     ]) { |context| handle_request context }
 
     puts "Listening on http://#{host}:#{port}"
+    server.bind_tcp host, port
     server.listen
   end
 end
