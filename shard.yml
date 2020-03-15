@@ -11,6 +11,6 @@ targets:
   server:
     main: src/server.cr
 
-crystal: 0.31.1
+crystal: 0.33.0
 
 license: MIT

@@ -61,7 +61,7 @@ module Server
       old = @@cache.min_by { |_, v| v.update }
       @@cache.delete old[0]
     end
-    @@cache[fid] = CacheNode.new filesize, Time.now
+    @@cache[fid] = CacheNode.new filesize, Time.utc
   end
 
   def self.check_cache(fid, data_proc, valid_proc)
@@ -79,7 +79,7 @@ module Server
       return (lock.data != nil ? lock.data : -500).as(Int64) # return http 500 if no result
     end
 
-    now = Time.now
+    now = Time.utc
     cache = @@cache[fid]?
     expire = @@conf.cache.expire
     # if cache still valid, just return it
